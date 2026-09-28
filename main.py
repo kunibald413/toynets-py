@@ -39,6 +39,12 @@ class KNN(object):
         self.X_train = X # (B, D)
         self.y_train = y # (B, )
 
+    def _asset_input_shape(self, input_x: np.ndarray):
+        if input_x.shape[-self.X_train.ndim+1:] != self.X_train.shape[1:]:
+            raise ValueError(
+                f"input_x trailing shape {input_x.shape[-self.X_train.ndim + 1:]} "
+                f"does not match X_train sample shape {self.X_train.shape[1:]}"
+            )
 
     def compute_distances_naive(self, input_x: np.ndarray) -> np.ndarray:
         """
@@ -46,11 +52,7 @@ class KNN(object):
             int (B, D) -> out (B, Xtrain_B)
             for each input (B) has num_trained amount of l2 distances to each train example
         """
-        if input_x.shape[-self.X_train.ndim+1:] != self.X_train.shape[1:]:
-            raise ValueError(
-                f"input_x trailing shape {input_x.shape[-self.X_train.ndim + 1:]} "
-                f"does not match X_train sample shape {self.X_train.shape[1:]}"
-            )
+        self._asset_input_shape(input_x)
 
         num_inputs = input_x.shape[0]
         num_trained = self.X_train.shape[0]
@@ -73,11 +75,7 @@ class KNN(object):
             int (B, D) -> out (B, Xtrain_B)
             for each input (B) has num_trained amount of l2 distances to each train example
         """
-        if input_x.shape[-self.X_train.ndim+1:] != self.X_train.shape[1:]:
-            raise ValueError(
-                f"input_x trailing shape {input_x.shape[-self.X_train.ndim + 1:]} "
-                f"does not match X_train sample shape {self.X_train.shape[1:]}"
-            )
+        self._asset_input_shape(input_x)
 
         num_inputs = input_x.shape[0]
         num_trained = self.X_train.shape[0]
@@ -96,7 +94,27 @@ class KNN(object):
 
         return out
 
-    def predict_lables(self, dist: np.ndarray, k: int = 1) -> np.ndarray:
+    def compute_distances_fast(self, input_x: np.ndarray) -> np.ndarray:
+        """
+            return the (B, N) L2 distance matrix between input_x (B, D) and X_train (N, D).
+            int (B, D) -> out (B, Xtrain_B)
+            for each input (B) has num_trained amount of l2 distances to each train example
+        """
+
+        self._asset_input_shape(input_x)
+
+        num_inputs = input_x.shape[0]
+        num_trained = self.X_train.shape[0]
+        # each input (B) has num_trained amount of l2 distances to each train example
+        out = np.zeros((num_inputs, num_trained))
+        print("out shape: ", out.shape)
+
+        shape_test_1 = input_x[:,None,:] - self.X_train
+        out = np.sqrt(np.sum((shape_test_1 **2), axis=-1))
+
+        return out
+
+    def predict_labels(self, dist: np.ndarray, k: int = 1) -> np.ndarray:
         '''
         dist is a distance matrix (num_inputs, num_train) with distances for each train point to the input point
         so dist[i, j] is the distance between x_input[i] and X_train[j]
@@ -172,27 +190,30 @@ if __name__ == "__main__":
     knn: KNN = KNN(len(cifar_classes))
     knn.train(X_train, y_train)
 
-    test_slice_count: int = 5
+    test_slice_count: int = 80
     k: int = 5
     distances = knn.compute_distances_naive(X_test[:test_slice_count])
-    predicted_labels = knn.predict_lables(distances, k=k)
+    predicted_labels = knn.predict_labels(distances, k=k)
 
     print([cifar_classes[i] for i in predicted_labels])
     print([cifar_classes[i] for i in y_test[:test_slice_count]])
 
-    print(predicted_labels == y_test[:test_slice_count])
-
     accuracy = (predicted_labels == y_test[:test_slice_count]).mean()
-    print(f"params: {k=}, {test_slice_count=}, {accuracy=:.3f}")
+    print(f"naive params: {k=}, {test_slice_count=}, {accuracy=:.3f}")
 
 
     print("a bit faster...")
     distances2 = knn.compute_distances_a_bit_faster(X_test[:test_slice_count])
-    predicted_labels = knn.predict_lables(distances2, k=k)
-
-    print(np.allclose(distances, distances2))  # True
-
+    predicted_labels = knn.predict_labels(distances2, k=k)
+    print("a bit faster all close: ", np.allclose(distances, distances2))  # True
     accuracy = (predicted_labels == y_test[:test_slice_count]).mean()
-    print(f"params: {k=}, {test_slice_count=}, {accuracy=:.3f}")
+    print(f"a bit faster params: {k=}, {test_slice_count=}, {accuracy=:.3f}")
+
+    print("fast...")
+    distances3 = knn.compute_distances_fast(X_test[:test_slice_count])
+    predicted_labels = knn.predict_labels(distances3, k=k)
+    print("fast all close: ", np.allclose(distances, distances3))
+    accuracy = (predicted_labels == y_test[:test_slice_count]).mean()
+    print(f"fast params: {k=}, {test_slice_count=}, {accuracy=:.3f}")
 
     pass
