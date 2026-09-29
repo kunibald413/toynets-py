@@ -36,8 +36,8 @@ class KNN(object):
         pass
 
     def train(self, X: np.ndarray, y: np.ndarray):
-        self.X_train = X # (B, D)
-        self.y_train = y # (B, )
+        self.X_train = X # (N, D)
+        self.y_train = y # (N, )
 
     def _asset_input_shape(self, input_x: np.ndarray):
         if input_x.shape[-self.X_train.ndim+1:] != self.X_train.shape[1:]:
