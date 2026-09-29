@@ -194,6 +194,15 @@ def _show_single_chanel_plot(x_train: np.ndarray, index: int = 0):
     plt.title('B')
     plt.show()
 
+
+import time
+def bench(fn, X, label):
+    t0 = time.perf_counter()
+    out = fn(X)
+    dt = time.perf_counter() - t0
+    print(f"{label:12s} {dt:.3f}s")
+    return out
+
 if __name__ == "__main__":
     print(f"python: {sys.version}")
     print(f"numpy:  {np.__version__}")
@@ -230,7 +239,7 @@ if __name__ == "__main__":
 
     test_slice_count: int = 500
     k: int = 5
-    distances = knn.compute_distances_naive(X_test[:test_slice_count])
+    distances = bench(knn.compute_distances_naive, X_test[:test_slice_count],"naive")
     predicted_labels = knn.predict_labels(distances, k=k)
 
     print([cifar_classes[i] for i in predicted_labels])
@@ -241,14 +250,14 @@ if __name__ == "__main__":
 
 
     print("a bit faster...")
-    distances2 = knn.compute_distances_a_bit_faster(X_test[:test_slice_count])
+    distances2 = bench(knn.compute_distances_a_bit_faster, X_test[:test_slice_count], "a-bit-faster")
     predicted_labels = knn.predict_labels(distances2, k=k)
     print("a bit faster all close: ", np.allclose(distances, distances2))  # True
     accuracy = (predicted_labels == y_test[:test_slice_count]).mean()
     print(f"a bit faster params: {k=}, {test_slice_count=}, {accuracy=:.3f}")
 
     print("fast...")
-    distances3 = knn.compute_distances_fast(X_test[:test_slice_count])
+    distances3 = bench(knn.compute_distances_fast, X_test[:test_slice_count], "full-vectorized")
     predicted_labels = knn.predict_labels(distances3, k=k)
     print("fast all close: ", np.allclose(distances, distances3))
     accuracy = (predicted_labels == y_test[:test_slice_count]).mean()
