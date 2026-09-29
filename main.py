@@ -58,7 +58,6 @@ class KNN(object):
         num_trained = self.X_train.shape[0]
         # each input (B) has num_trained amount of l2 distances to each train example
         out = np.zeros((num_inputs, num_trained))
-        print("out shape: ", out.shape)
 
         for i in range(num_inputs):
             for j in range(num_trained):
@@ -81,7 +80,6 @@ class KNN(object):
         num_trained = self.X_train.shape[0]
         # each input (B) has num_trained amount of l2 distances to each train example
         out = np.zeros((num_inputs, num_trained))
-        print("out shape: ", out.shape)
 
         for i in range(num_inputs):
             # broadcast one (D, ) at i over the entire train (N, D) to get (N, D)
@@ -101,18 +99,58 @@ class KNN(object):
             for each input (B) has num_trained amount of l2 distances to each train example
         """
 
+        '''
+            l2 distance is a square of a vector: 
+            ||a - b||^2 = ||v||^2
+            
+            meaning it's a vector that dotproducts with itself:
+            
+            ||v||^2 = sum_i (v_i^2)
+            
+            definition:
+            ||a - b||^2 = sum_i  ( (a_i - b_i)^2 )
+            
+            expand the square:
+            (a_i - b_i)^2 = a_i^2 - 2 * a_i * b_i + b_i^2
+            
+            so:
+            ||a - b||^2 = sum_i ( a_i^2 - 2 * a_i * b_i + b_i^2 )
+            
+            we are summing sums, we can just rearrage the order how we sum:
+            
+            sum_i ( a_i^2 - 2 * a_i * b_i + b_i^2 ) = sum_i (a_i^2) - 2 * sum_i (a_i * b_i) + sum_i (b_i^2)
+            
+            so:
+            ||a - b||^2 = sum_i (a_i^2) - 2 * sum_i (a_i * b_i) + sum_i (b_i^2)
+            
+            and recognize the definitions:
+            
+            ||a - b||^2 = ||a||^2 - 2 * dotproduct(a, b) + ||b||^2
+        '''
+
         self._asset_input_shape(input_x)
 
-        num_inputs = input_x.shape[0]
-        num_trained = self.X_train.shape[0]
+        # this is just doing ||a - b||^2 right away
+        # with full broadcast to (B, N, D) this is (B * N * D) float32 allocated -> oom
+        #shape_test_1 = input_x[:,None,:] - self.X_train
+        #l2 = np.sqrt(np.sum((shape_test_1 **2), axis=-1))
+
+        # galaxy brain math version based on the algebraic identity
+        # (B, 1) aka the ||a||^2
+        inp_dot = (input_x ** 2).sum(axis=1, keepdims=True)
+        # (N, 1) aka  the ||b||^2
+        train_dot = (self.X_train ** 2).sum(axis=1, keepdims=True)
+        # (B, D) @ (N, D).T -> (B, N) aka dotproduct(a, b) achieved with matmul
+        inp_train_dot = input_x @ self.X_train.T
+
+        # ||a||^2 - 2 * dotproduct(a, b) + ||b||^2)
+        #  transpose train_dot (N, 1) -> (1, N) so each train norm broadcasts over the (B, N) result
+        distances_squared = inp_dot - (2 * inp_train_dot) + train_dot.T
+        l2 = np.sqrt(distances_squared)
+
+        # (B, N)
         # each input (B) has num_trained amount of l2 distances to each train example
-        out = np.zeros((num_inputs, num_trained))
-        print("out shape: ", out.shape)
-
-        shape_test_1 = input_x[:,None,:] - self.X_train
-        out = np.sqrt(np.sum((shape_test_1 **2), axis=-1))
-
-        return out
+        return l2
 
     def predict_labels(self, dist: np.ndarray, k: int = 1) -> np.ndarray:
         '''
@@ -190,7 +228,7 @@ if __name__ == "__main__":
     knn: KNN = KNN(len(cifar_classes))
     knn.train(X_train, y_train)
 
-    test_slice_count: int = 80
+    test_slice_count: int = 500
     k: int = 5
     distances = knn.compute_distances_naive(X_test[:test_slice_count])
     predicted_labels = knn.predict_labels(distances, k=k)
