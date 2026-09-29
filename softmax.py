@@ -64,9 +64,9 @@ if __name__ == "__main__":
     X_train = X_train - mean_img
     X_test = X_test - mean_img  # same mean that was created on test
 
-
+    NUM_CLASSES: int = 10
     # create our W (num_classes, D)
-    W = np.random.randn(10, mean_img.shape[0]) * 0.001
+    W = np.random.randn(NUM_CLASSES, mean_img.shape[0]) * 0.001
     print(f"W: {W.shape}")
     print(f"W: {W[:2]}")
 
@@ -148,7 +148,7 @@ if __name__ == "__main__":
 
     # cross-validate
 
-    expected_init_loss = -np.log(1.0 / 10)
+    expected_init_loss = -np.log(1.0 / NUM_CLASSES)
     print(f"expected first init loss {expected_init_loss}")
 
     pass
