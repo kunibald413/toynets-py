@@ -263,4 +263,47 @@ if __name__ == "__main__":
     accuracy = (predicted_labels == y_test[:test_slice_count]).mean()
     print(f"fast params: {k=}, {test_slice_count=}, {accuracy=:.3f}")
 
+
+
+    # CROSS VALIDATE
+    num_folds = 5
+    k_choices = [1, 3, 5, 8, 10, 12, 15, 20, 50, 100]
+
+    X_train_folds = np.array_split(X_train, num_folds, axis=0)
+    y_train_folds = np.array_split(y_train, num_folds, axis=0)
+    num_classes = len(cifar_classes)
+    k_to_accuracies = {k: [] for k in k_choices}
+
+    for f in range(num_folds):
+        X_val = X_train_folds[f]
+        y_val = y_train_folds[f]
+
+        # all the other folds become the train set
+        X_tr = np.concatenate([X_train_folds[i] for i in range(num_folds) if i != f], axis=0)
+        y_tr = np.concatenate([y_train_folds[i] for i in range(num_folds) if i != f], axis=0)
+
+        knn = KNN(num_classes)
+        knn.train(X_tr, y_tr)
+
+        dists = knn.compute_distances_fast(X_val)
+
+        for k in k_choices:
+            preds = knn.predict_labels(dists, k=k)
+            acc = (preds == y_val).mean()
+            k_to_accuracies[k].append(acc)
+
+    for k in sorted(k_to_accuracies):
+        for accuracy in k_to_accuracies[k]:
+            print('k = %d, accuracy = %f' % (k, accuracy))
+
+    # plot
+    for k in k_choices:
+        accs = k_to_accuracies[k]
+        plt.scatter([k] * len(accs), accs, color='blue')
+        plt.plot(k, np.mean(accs), marker='o', color='red')
+
+    plt.xlabel('k')
+    plt.ylabel('accuracy')
+    plt.show()
+
     pass
