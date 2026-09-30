@@ -88,6 +88,7 @@ if __name__ == "__main__":
 
     batch_size: int = 50
 
+    reg: float = 0.002
     for i in range(100):
         x_batch = X_train[:batch_size]
         y_batch = y_train[:batch_size]
@@ -117,6 +118,7 @@ if __name__ == "__main__":
 
         if (i <= 10 or i % 10 == 0):
             loss = -np.log(y_probs).mean() # average loss agross the batch
+            loss += reg * np.sum(W*W)
             print(f"step: %d loss: %.4f" % (i, loss))
 
 
@@ -140,6 +142,13 @@ if __name__ == "__main__":
         # which is implied in the dotproduct
         # done here in one expression with matmul
         dLdW = dLdlogits.T @ x_batch
+
+        # regularization gradient
+        # loss is: reg * (w[r_1, c_1] * w[r_1, c_1] + w[r_2, c_2] * w[r_2, c_2] + ... etc)
+        # we differentiate wrt to w[r,c]
+        # through sum rule other terms become just + 0
+        # so we just took at w[r,c]^2 and apply product rule (2 * w)
+        dLdW += reg * 2 * W
 
 
         # update weights with sgd
