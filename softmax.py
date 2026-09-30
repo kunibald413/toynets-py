@@ -33,6 +33,20 @@ def _show_img(img):
     plt.imshow(img.reshape((32, 32, 3)).astype('uint8'))  # visualize the mean image
     plt.show()
 
+
+def softmax(logits: np.ndarray) -> np.ndarray:
+    # logits (B, C)
+    logits_max = logits.max(axis=1, keepdims=True)
+
+    logits = logits - logits_max
+    logits = np.exp(logits)
+
+    exp_sum = logits.sum(axis=1, keepdims=True)
+    probs = logits / exp_sum
+
+    return probs  # (B, C)
+
+
 if __name__ == "__main__":
     print(f"python: {sys.version}")
     print(f"numpy:  {np.__version__}")
@@ -81,54 +95,33 @@ if __name__ == "__main__":
     # so W will be (num_classes, D+1)
     # and our xs will be (B, D+1)
 
-    # implement softmax naive
-    # implement softmax vectorized
-    # implement loss calculation and gradients
-    # add regularization to the loss
 
-    batch_size: int = 50
+    batch_size: int = 64
+    train_size: int = X_train.shape[0]
+    max_index: int = train_size - batch_size
+    train_steps: int = train_size * 2
+    base_lr: float = 0.01
 
     reg: float = 0.002
-    for i in range(100):
-        x_batch = X_train[:batch_size]
-        y_batch = y_train[:batch_size]
-        #print(f"x_batch: {x_batch.shape}")
-        logits = x_batch @ W.T
-        #print(f"logits: {logits.shape}")
+    for step in range(train_steps):
+        start = np.random.randint(0, max_index)
+        x_batch = X_train[start:start + batch_size]
+        y_batch = y_train[start:start + batch_size]
 
-        logits_max = logits.max(axis=1, keepdims=True)
-        #print(f"logits max axis 1: {logits_max.shape}")
+        logits = x_batch @ W.T  # (B, D) @ (D, C) -> (B, C)
+        probs = softmax(logits)  # (B, C)
 
-        logits = logits - logits_max
-        logits = np.exp(logits)
-        #print(f"logits exp: {logits.shape}")
-
-        exp_sum = logits.sum(axis=1, keepdims=True)
-        #print(f"exp_sum: {exp_sum.shape}")
-        probs = logits / exp_sum  # (B, C)
-        #print(f"probs: {probs.shape}")
-
-        #print(f"probs: {probs[0]}")
-
-        #print(probs.sum(axis=1))
         y_probs = probs[np.arange(batch_size), y_batch]
-        #print(f"y_probs: {y_probs.shape}")
-        #print(f"y_probs: {y_probs}")
 
+        lr: float = base_lr * (1 - (step / train_steps) + 0.00001)
+        if (step <= 10 or step % 1000 == 0):
+            loss = -np.log(y_probs).mean()  # average loss across the batch
+            loss += reg * np.sum(W*W)  # L2 regularization
+            print(f"step: %d loss: %.4f lr: %.4f" % (step, loss, lr))
 
-        if (i <= 10 or i % 10 == 0):
-            loss = -np.log(y_probs).mean() # average loss agross the batch
-            loss += reg * np.sum(W*W)
-            print(f"step: %d loss: %.4f" % (i, loss))
-
-
-
-        #print(X_train[0][:5])
 
         dLdlogits = probs.copy()
         dLdlogits[np.arange(batch_size), y_batch] -= 1
-
-        # print(f"y_probs: {dLdlogits.shape}") # B, C
 
         # we use average for loss, so need to average the grad here as well
         dLdlogits /= batch_size
@@ -150,10 +143,18 @@ if __name__ == "__main__":
         # so we just took at w[r,c]^2 and apply product rule (2 * w)
         dLdW += reg * 2 * W
 
-
         # update weights with sgd
-        lr: float = 0.01
         W += lr * -dLdW  # step into negative direction of the gradient
+
+    logits = X_test @ W.T  # (B, D) @ (D, C) -> (B, C)
+    probs = softmax(logits)  # (B, C)
+
+    labels = np.argmax(logits, axis=1)
+    print("predicted: ", labels[:10])
+    print("true     : ", y_test[:10])
+
+    accuracy = np.mean(labels == y_test)
+    print("accuracy: %.2f perc" % (accuracy * 100))
 
     # cross-validate
 
