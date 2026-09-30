@@ -149,7 +149,9 @@ if __name__ == "__main__":
     logits = X_test @ W.T  # (B, D) @ (D, C) -> (B, C)
     probs = softmax(logits)  # (B, C)
 
-    labels = np.argmax(logits, axis=1)
+    # passing logits works too because we interpret
+    # increasing logit (or score) as "count" and increased probablity
+    labels = np.argmax(probs, axis=1)
     print("predicted: ", labels[:10])
     print("true     : ", y_test[:10])
 
