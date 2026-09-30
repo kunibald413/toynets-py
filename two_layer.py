@@ -92,19 +92,23 @@ def softmax_loss(x: np.ndarray, y: np.ndarray):
 
 
 def _test_fwd_backward():
-    xinp = np.random.rand(12, 32, 32, 3)
-    y = np.array([2] * 12)
-    W = np.random.rand(10, 32*32*3) * 0.0001
-    b = np.random.rand(10) * 0.0
+    B: int = 12
+    C: int = 10
+    feat_dims = [32,32,3]
+    xinp = np.random.rand(B, *feat_dims)
+    y = np.array([2] * B)
+    inp_dim: int = int(np.prod(feat_dims))
+    W = np.random.rand(C, inp_dim) * 0.0001
+    b = np.random.rand(C) * 0.0
     out = affine_forward(xinp, W, b)
 
     print(f"xinp {xinp.shape}")
     print(f"out {out.shape}")
 
-    upstream_dummy_w = np.random.rand(12, 10)
+    upstream_dummy_w = np.random.rand(B, C)
     dx, dW, db = affine_backward(upstream_dummy_w, xinp, W)
 
-    upstream_dummy_a = np.random.rand(12, 10)
+    upstream_dummy_a = np.random.rand(B, C)
     activation = relu_forward(out)
     relu_backward(upstream_dummy_a, out)
 
@@ -196,10 +200,21 @@ if __name__ == "__main__":
     X_test = X_test[mask]
     y_test = y_test[mask]
 
-    # normalize
-    X_train /= 255.0
-    X_val /= 255.0
-    X_test /= 255.0
+    extract_features: bool = False
+
+    if extract_features:
+        # test accuracy: 54.50 perc
+        from features import get_img_features
+        X_train = get_img_features(X_train)
+        X_val = get_img_features(X_val)
+        X_test = get_img_features(X_test)
+    else:
+        # test accuracy: 53.50 perc
+        # normalize
+        X_train /= 255.0
+        X_val /= 255.0
+        X_test /= 255.0
+
 
     # substract mean
     mean_image = np.mean(X_train, axis=0)
@@ -207,9 +222,9 @@ if __name__ == "__main__":
     X_val -= mean_image
     X_test -= mean_image
 
-
     #  model
-    classifier: TwoLayerNet = TwoLayerNet()
+    input_dim: int = int(np.prod(X_train.shape[1:]))  # multiply all but first dim
+    classifier: TwoLayerNet = TwoLayerNet(input_dim=input_dim)
 
     batch_size: int = 64
     train_size: int = X_train.shape[0]
