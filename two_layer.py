@@ -61,12 +61,36 @@ def relu_backward(dout: np.ndarray, x: np.ndarray):
     # to pass grads through where the input was > 0 and kill them otherwise
     return dout * (x > 0)
 
-if __name__ == "__main__":
-    np.random.seed(999)
 
+def softmax_loss(x: np.ndarray, y: np.ndarray):
+    """
+    :param x: logits of shape (B, C)
+    :param y: correct labels of shape (B, )
+    :return: loss and gradient wrt x
+    """
+
+    max_x = x.max(axis=1, keepdims=True)
+
+    x = x - max_x
+    x_exp = np.exp(x)
+    x_exp_sum = x_exp.sum(axis=1, keepdims=True)
+    probs = x_exp / x_exp_sum
+
+    B = x.shape[0]
+    dx = probs.copy()
+    dx[np.arange(B), y] -= 1.0
+    dx /= B
+
+    loss = -np.log(probs[np.arange(B), y]).mean()
+
+    return loss, dx
+
+
+def _test_fwd_backward():
     xinp = np.random.rand(12, 32, 32, 3)
-    W = np.random.rand(10, 32*32*3)
-    b = np.random.rand(10)
+    y = np.array([2] * 12)
+    W = np.random.rand(10, 32*32*3) * 0.0001
+    b = np.random.rand(10) * 0.0
     out = affine_forward(xinp, W, b)
 
     print(f"xinp {xinp.shape}")
@@ -78,5 +102,61 @@ if __name__ == "__main__":
     upstream_dummy_a = np.random.rand(12, 10)
     activation = relu_forward(out)
     relu_backward(upstream_dummy_a, out)
+
+    loss, dlogits = softmax_loss(activation, y)
+
+    print(f"{loss=}")
+
+
+class TwoLayerNet(object):
+    def __init__(
+        self,
+        input_dim: int = 3*32*32,
+        hidden_dim: int = 64,
+        num_classes: int = 10,
+    ):
+        self.reg: float = 0.002
+        self.input_dim: int = input_dim
+        self.num_classes: int = num_classes
+        self.hidden_dim: int = hidden_dim
+
+        weight_scale: float = 0.0001
+        self.W1: np.ndarray = np.random.randn(self.hidden_dim, self.input_dim) * weight_scale
+        self.b1: np.ndarray = np.array([0.0] * self.hidden_dim)
+
+        self.W2: np.ndarray = np.random.randn(self.num_classes, self.hidden_dim) * weight_scale
+        self.b2: np.ndarray = np.array([0.0] * self.num_classes)
+
+
+    def forward(self, x: np.ndarray, y: np.ndarray = None):
+        # x (B, d_1, d_2 ... d_k)
+        B = x.shape[0]
+
+        x_hidden = affine_forward(x, self.W1, self.b1)  # (B, H)
+
+        a = relu_forward(x_hidden)  # (B, H)
+
+        logits = affine_forward(a, self.W2, self.b2)  # (B, C)
+
+        return logits
+
+
+
+
+if __name__ == "__main__":
+    np.random.seed(999)
+
+    classifier: TwoLayerNet = TwoLayerNet()
+
+    xinp = np.random.rand(12, 32, 32, 3)
+    logits = classifier.forward(xinp)
+    print(f"logits: {logits.shape}")
+
+    loss, grad = softmax_loss(logits, np.array([0] * xinp.shape[0]))
+
+    print(f"{loss=}")
+
+    expected_loss = -np.log(1/classifier.num_classes)
+    print(f"{expected_loss=}")
 
     pass
