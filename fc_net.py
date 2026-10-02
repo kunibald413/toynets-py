@@ -21,20 +21,12 @@ class FC_Net(object):
     ):
         assert hidden_dims is not None and len(hidden_dims) >= 1, "hidden dims must at least have one integer"
         self.num_hidden_layers: int = len(hidden_dims)
-        self.num_layers: int = self.num_hidden_layers + 2  # in and out layers
+        self.num_layers: int = self.num_hidden_layers + 1  # add out layers
         self.params: dict[str, np.ndarray] = {}
 
-
         layer_id: int = 0
-        embed_dim: int = hidden_dims[0]
-        W_in: np.ndarray = rng.standard_normal((embed_dim, input_dim)) * weight_scale
-        b_in: np.ndarray = np.zeros(embed_dim)
-        self.params[f"W{layer_id}"] = W_in
-        self.params[f"b{layer_id}"] = b_in
-        layer_id += 1
-
         for layer_idx in range(self.num_hidden_layers):
-            inp_dim: int = embed_dim if layer_idx == 0 else hidden_dims[layer_idx - 1]
+            inp_dim: int = input_dim if layer_idx == 0 else hidden_dims[layer_idx - 1]
             out_dim: int = hidden_dims[layer_idx]
             W_h: np.ndarray = rng.standard_normal((out_dim, inp_dim)) * weight_scale
             b_h: np.ndarray = np.zeros(out_dim)
@@ -128,7 +120,7 @@ if __name__ == "__main__":
 
     print(rng.standard_normal((2, 3)))
 
-    net: FC_Net = FC_Net(rng, [32, 16, 8])
+    net: FC_Net = FC_Net(rng, [64, 32, 16])
 
     for k, v in net.params.items():
         print(f"{k=} {v.shape}")
