@@ -177,6 +177,11 @@ def load_data(extract_features: bool = False) -> Data:
     return out
 
 
+def optim_sgd_vanilla(param: np.ndarray, grad: np.ndarray, config: dict):
+    assert param.shape == grad.shape, f"shape mismatch param vs grad {param.shape} != {grad.shape}"
+    assert "lr" in config and isinstance(config["lr"], float), f"missing scalar learning rate 'lr' {config}"
+    param -= config["lr"] * grad
+
 if __name__ == "__main__":
     print(f"python: {sys.version}")
     print(f"numpy:  {np.__version__}")
@@ -233,7 +238,10 @@ if __name__ == "__main__":
         print("test accuracy: %.2f perc" % (test_accuracy * 100))
 
 
-
+    optim_config = {
+        "lr": base_lr,
+        "base_lr": base_lr,
+    }
     for step in range(train_steps):
         start = 0 if overfit_one_batch else np.random.randint(0, max_index)  # chance to miss good part of dataset
         x_batch = data.X_train[start:start + batch_size + 1]
@@ -241,12 +249,14 @@ if __name__ == "__main__":
 
         logits, loss, grad = net.loss(x_batch, y_batch)
 
-        lr = base_lr * (1 - step / train_steps)
+        lr = optim_config.get("lr")
         if (step <= 10 or step % 1000 == 0):
             print(f"loss: {loss:.4f} step: {step} lr: {lr:.4f}")
 
         for k, v in net.params.items():
-            v -= lr * grad[k]
+            optim_sgd_vanilla(v, grad[k], optim_config)
+
+        optim_config["lr"] = optim_config["base_lr"] * (1 - step / train_steps)
 
 
     run_test()
