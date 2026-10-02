@@ -1,6 +1,8 @@
 
+import sys
 import numpy as np
 
+from data_utils import load_CIFAR10
 from two_layer import (
     affine_forward,
     affine_backward,
@@ -9,6 +11,7 @@ from two_layer import (
     softmax,
     softmax_loss,
 )
+
 
 class FC_Net(object):
     def __init__(
@@ -40,7 +43,7 @@ class FC_Net(object):
         self.params[f"b{layer_id}"] = b_out
         layer_id += 1
 
-    def loss(self, X: np.ndarray, y: np.ndarray = None) -> tuple[np.ndarray, dict[str, np.ndarray]]:
+    def loss(self, X: np.ndarray, y: np.ndarray = None) -> tuple[np.ndarray, float, dict[str, np.ndarray]]:
         """
         :param X: arr of input data of shape (B, d_1, d_2, ... d_k)
         :param y: arr of labels (B, ). y[i] gives the correct label for X[i]
@@ -68,8 +71,8 @@ class FC_Net(object):
             x_h = affine_forward(x, W, b)
             hidden_outputs[layer_id] = x_h.copy()
 
-            s: np.ndarray = x_h.std(axis=0)  # std per feature across batch
-            print(f"layer: {layer_id} x {x.shape} -> x_h {x_h.shape} \n   std s.mean {s.mean():.4f} s.max: {s.max():.4f} s.min {s.min():.4f}")
+            #s: np.ndarray = x_h.std(axis=0)  # std per feature across batch
+            #print(f"layer: {layer_id} x {x.shape} -> x_h {x_h.shape} \n   std s.mean {s.mean():.4f} s.max: {s.max():.4f} s.min {s.min():.4f}")
 
             if layer_id < final_layer_id:
                 a = relu_forward(x_h)
@@ -81,8 +84,9 @@ class FC_Net(object):
                 #print(f"    softmax x_h {x_h.shape} -> a {logits.shape}")
 
         assert logits is not None, "logits None?"
+
         if y is None:
-            return logits, None
+            return logits, 0, {}
 
         grads: dict[str, np.ndarray] = {}  # store grads for the params we want to update
 
@@ -91,7 +95,7 @@ class FC_Net(object):
 
         upstream_grad: np.ndarray = dlogits
         for layer_id in range(final_layer_id, -1, -1):
-            print(f"backward layer: {layer_id}")
+            #print(f"backward layer: {layer_id}")
             if layer_id < final_layer_id:
                 # how does activation (a) change wrt to input (x_h) + chain rule (upstream_grad)
                 dhidden = relu_backward(upstream_grad, hidden_outputs[layer_id])
@@ -105,32 +109,121 @@ class FC_Net(object):
             grads[f"b{layer_id}"] = db
             upstream_grad = dinp
 
-        print(f"mean loss: {loss}")
+        # print(f"mean loss: {loss}")
 
-        return logits, grads
+        return logits, loss, grads
 
 
 
 # fully connected net with arbitrary number of layers
 
+class Data():
+    num_training: int = 49000
+    num_validation: int = 1000
+    num_test: int = 1000
+
+    mean_image: np.ndarray
+    X_train: np.ndarray
+    y_train: np.ndarray
+    X_val: np.ndarray
+    y_val: np.ndarray
+    X_test: np.ndarray
+    y_test: np.ndarray
+
+def load_data() -> Data:
+    num_training: int = 49000
+    num_validation: int = 1000
+    num_test: int = 1000
+
+    cifar10_dir = r"datasets/cifar-10-batches-py"
+    X_train, y_train, X_test, y_test = load_CIFAR10(cifar10_dir)
+
+    mask = list(range(num_training, num_training + num_validation))
+    X_val = X_train[mask]
+    y_val = y_train[mask]
+    mask = list(range(num_training))
+    X_train = X_train[mask]
+    y_train = y_train[mask]
+    mask = list(range(num_test))
+    X_test = X_test[mask]
+    y_test = y_test[mask]
+
+    # normalize
+    X_train /= 255.0
+    X_val /= 255.0
+    X_test /= 255.0
+
+    # substract mean
+    mean_image = np.mean(X_train, axis=0)
+    X_train -= mean_image
+    X_val -= mean_image
+    X_test -= mean_image
+
+    out = Data()
+    out.X_train = X_train
+    out.y_train = y_train
+    out.X_val = X_val
+    out.y_val = y_val
+    out.X_test = X_test
+    out.y_test = y_test
+    out.mean_image = mean_image
+    return out
+
 
 if __name__ == "__main__":
+    print(f"python: {sys.version}")
+    print(f"numpy:  {np.__version__}")
+
     seed: int = 1337
     rng = np.random.default_rng(seed=seed)
 
     print(rng.standard_normal((2, 3)))
 
-    net: FC_Net = FC_Net(rng, [64, 32, 16])
+    num_classes: int = 10
+    net: FC_Net = FC_Net(rng, [64, 32, 16], output_dim=num_classes)
 
     for k, v in net.params.items():
         print(f"{k=} {v.shape}")
 
-    dummy_x = rng.random((2, 32, 32, 3))
-    dummy_y = np.array([4] * 2)
-    logits, grads = net.loss(dummy_x, dummy_y)
+    B: int = 10
+    dummy_x = rng.random((B, 32, 32, 3))
+    dummy_y = np.array([4] * B)
+    logits, loss, grads = net.loss(dummy_x, dummy_y)
+    for k, v in net.params.items():
+        assert k in grads, f"param {k} has no grads?"
 
     probs = softmax(logits)
 
     print(logits.shape)
     print(f"probs: {probs[:2]}")
     print(probs.sum(axis=1))
+    print(f"expected init loss: ", -np.log(1/num_classes))
+    print(f"loss: {loss}")
+
+    for k, v in grads.items():
+        examlpe_grads = v[:5] if len(v.shape) == 1 else v[0][:5]
+        print(f"grad for {k} {v.shape} example: {examlpe_grads}...")
+
+    print("loading data...")
+    data: Data = load_data()
+
+    overfit_one_batch: bool = True
+    batch_size: int = 64
+    train_size: int = data.X_train.shape[0]
+    max_index: int = train_size - batch_size
+    train_steps: int = 1500 if overfit_one_batch else train_size
+    base_lr: float = 0.1
+
+    reg: float = 0.002
+    for step in range(train_steps):
+        start = 0 if overfit_one_batch else np.random.randint(0, max_index)
+        x_batch = data.X_train[start:start + batch_size + 1]
+        y_batch = data.y_train[start:start + batch_size + 1]
+
+        logits, loss, grad = net.loss(x_batch, y_batch)
+
+        if (step <= 10 or step % 100 == 0):
+            print(f"loss: {loss:.4f} step:{step}")
+
+        for k, v in net.params.items():
+            v -= base_lr * grad[k]

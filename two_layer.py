@@ -73,7 +73,7 @@ def softmax(x: np.ndarray) -> np.ndarray:
     probs = x_exp / x_exp_sum
     return probs
 
-def softmax_loss(x: np.ndarray, y: np.ndarray):
+def softmax_loss(x: np.ndarray, y: np.ndarray) -> tuple[float, np.ndarray]:
     """
     :param x: logits of shape (B, C)
     :param y: correct labels of shape (B, )
