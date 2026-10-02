@@ -11,7 +11,7 @@ def affine_forward(x: np.ndarray, W: np.ndarray, b: np.ndarray) -> np.ndarray:
     :param b: biases of shape (D_OUT, )
     :return: out, linear transformation x @ W.T + b of shape (B, D_OUT)
     """
-    x = x.reshape(x.shape[0], -1) # (B, D)
+    x = x.reshape(x.shape[0], -1)  # (B, D)
     assert x.shape[-1] == W.shape[-1], f"shape mismatch x {x.shape} W {W.shape}"
     # (B, D) @ (D, D_OUT) -> (B, D_OUT)
     out = x @ W.T + b
