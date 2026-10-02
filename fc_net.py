@@ -49,6 +49,7 @@ class FC_Net(object):
         :param y: arr of labels (B, ). y[i] gives the correct label for X[i]
         :return: tuple:
             logits (B, C),
+            loss: float
             grads: dictionary with gradients of the loss wrt to the param
         """
 
@@ -130,7 +131,7 @@ class Data():
     X_test: np.ndarray
     y_test: np.ndarray
 
-def load_data() -> Data:
+def load_data(extract_features: bool = False) -> Data:
     num_training: int = 49000
     num_validation: int = 1000
     num_test: int = 1000
@@ -148,10 +149,16 @@ def load_data() -> Data:
     X_test = X_test[mask]
     y_test = y_test[mask]
 
-    # normalize
-    X_train /= 255.0
-    X_val /= 255.0
-    X_test /= 255.0
+    if extract_features:
+        from features import get_img_features
+        X_train = get_img_features(X_train)
+        X_val = get_img_features(X_val)
+        X_test = get_img_features(X_test)
+    else:
+        # normalize
+        X_train /= 255.0
+        X_val /= 255.0
+        X_test /= 255.0
 
     # substract mean
     mean_image = np.mean(X_train, axis=0)
@@ -180,7 +187,8 @@ if __name__ == "__main__":
     print(rng.standard_normal((2, 3)))
 
     num_classes: int = 10
-    net: FC_Net = FC_Net(rng, [64, 32, 16], output_dim=num_classes)
+    input_dim: int = 32 * 32 * 3  # actually data dependant
+    net: FC_Net = FC_Net(rng, [32, 16], input_dim, output_dim=num_classes)
 
     for k, v in net.params.items():
         print(f"{k=} {v.shape}")
@@ -207,23 +215,38 @@ if __name__ == "__main__":
     print("loading data...")
     data: Data = load_data()
 
-    overfit_one_batch: bool = True
-    batch_size: int = 64
+    # test accuracy: 51.50 perc
+    overfit_one_batch: bool = False
+    batch_size: int = 50
     train_size: int = data.X_train.shape[0]
     max_index: int = train_size - batch_size
     train_steps: int = 1500 if overfit_one_batch else train_size
     base_lr: float = 0.1
 
     reg: float = 0.002
+
+    def run_test():
+        test_logits, loss, _ = net.loss(data.X_test, data.y_test)
+        test_probs = softmax(test_logits)
+        predicted_labels = np.argmax(test_probs, axis=1)
+        test_accuracy = np.mean((predicted_labels == data.y_test))
+        print("test accuracy: %.2f perc" % (test_accuracy * 100))
+
+
+
     for step in range(train_steps):
-        start = 0 if overfit_one_batch else np.random.randint(0, max_index)
+        start = 0 if overfit_one_batch else np.random.randint(0, max_index)  # chance to miss good part of dataset
         x_batch = data.X_train[start:start + batch_size + 1]
         y_batch = data.y_train[start:start + batch_size + 1]
 
         logits, loss, grad = net.loss(x_batch, y_batch)
 
-        if (step <= 10 or step % 100 == 0):
-            print(f"loss: {loss:.4f} step:{step}")
+        lr = base_lr * (1 - step / train_steps)
+        if (step <= 10 or step % 1000 == 0):
+            print(f"loss: {loss:.4f} step: {step} lr: {lr:.4f}")
 
         for k, v in net.params.items():
-            v -= base_lr * grad[k]
+            v -= lr * grad[k]
+
+
+    run_test()
