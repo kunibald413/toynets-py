@@ -193,6 +193,65 @@ def optim_sgd_momentum(param_name: str, param: np.ndarray, grad: np.ndarray, con
     config[v_key] = new_velocity
     param += new_velocity  # velocity is already expressed into negative direction of grad
 
+def optim_rmsprop(param_name: str, param: np.ndarray, grad: np.ndarray, config: dict):
+    assert_optim_config(param, grad, config)
+    # cache = decay_rate * cache + (1 - decay_rate) * grad ** 2
+    # param += -1 * lr * grad / (sqrt(cache) + eps)
+    ada_cache_key: str = f"ada_cache_{param_name}"
+    assert ada_cache_key in config, f"missing adaptive cache matrix for {param_name} ({ada_cache_key})"
+    decay_key: str = "ada_decay_rate"
+    assert decay_key in config and isinstance(config[decay_key], float), f"missing scalar '{decay_key}' value"
+    eps: float = 1e-8
+    dr: float = config[decay_key]
+    config[ada_cache_key] = dr * config[ada_cache_key] + ((1 - dr) * grad ** 2)
+    param -= config["lr"] * grad / np.sqrt(config[ada_cache_key] + eps)
+
+def optim_adam():
+    pass
+
+OPTIM_TYPE_SGD_VANILLA: str = "sgd_vanilla"
+OPTIM_TYPE_SGD_MOMENTUM: str = "sgd_momentum"
+OPTIM_TYPE_RMSPROP: str = "rmsprop"
+def optim_init_config(
+        params: dict[str, np.ndarray],
+        base_lr: float = 5e-3,
+        optim_type: str = OPTIM_TYPE_SGD_VANILLA) -> dict:
+    optim_config = {
+        "lr": base_lr,
+        "base_lr": base_lr,
+    }
+
+    if optim_type == OPTIM_TYPE_SGD_MOMENTUM:
+        optim_config["friction"] = 0.9
+        for k, v in params.items():
+            optim_config[f"velocity_{k}"] = np.zeros_like(v)
+
+    elif optim_type == OPTIM_TYPE_RMSPROP:
+        optim_config["ada_decay_rate"] = 0.9
+        for k, v in params.items():
+            optim_config[f"ada_cache_{k}"] = np.zeros_like(v)
+        pass
+    elif optim_type == OPTIM_TYPE_SGD_VANILLA:
+        pass
+    else:
+        raise ValueError(f"unknown optimizer type: {optim_type}")
+
+    optim_config['optim_type'] = optim_type
+
+    return optim_config
+
+def optim_update(params: dict[str, np.ndarray], grad: dict[str, np.ndarray], optim_config: dict):
+    optim_type: str = optim_config.get("optim_type")
+    for k, v in params.items():
+        if optim_type == OPTIM_TYPE_RMSPROP:
+            optim_rmsprop(k, v, grad[k], optim_config)
+        elif optim_type == OPTIM_TYPE_SGD_MOMENTUM:
+            optim_sgd_momentum(k, v, grad[k], optim_config)
+        elif optim_type == OPTIM_TYPE_SGD_VANILLA:
+            optim_sgd_vanilla(v, grad[k], optim_config)
+        else:
+            raise ValueError(f"Can't do optimzer update. Unknown optimizer: {optim_type}")
+
 if __name__ == "__main__":
     print(f"python: {sys.version}")
     print(f"numpy:  {np.__version__}")
@@ -239,7 +298,8 @@ if __name__ == "__main__":
     train_steps: int = 1500 if overfit_one_batch else train_size
     base_lr: float = 5e-3
 
-    use_momentum_optim: bool = True
+    train_steps = 5000
+    optim_type: str = OPTIM_TYPE_RMSPROP
     decay_lr: bool = False
 
     reg: float = 0.002
@@ -252,15 +312,8 @@ if __name__ == "__main__":
         print("test accuracy: %.2f perc" % (test_accuracy * 100))
 
 
-    optim_config = {
-        "lr": base_lr,
-        "base_lr": base_lr,
-    }
-
-    if use_momentum_optim:
-        optim_config["friction"] = 0.9
-        for k, v in net.params.items():
-            optim_config[f"velocity_{k}"] = np.zeros_like(v)
+    optim_config = optim_init_config(net.params, base_lr, optim_type)
+    print(f"using optimizer: {optim_type}")
 
     for step in range(train_steps):
         start = 0 if overfit_one_batch else rng.integers(0, max_index, endpoint=True)  # chance to miss good part of dataset
@@ -273,11 +326,7 @@ if __name__ == "__main__":
         if (step <= 10 or step % 1000 == 0):
             print(f"loss: {loss:.4f} step: {step} lr: {lr:.4f}")
 
-        for k, v in net.params.items():
-            if use_momentum_optim:
-                optim_sgd_momentum(k, v, grad[k], optim_config)
-            else:
-                optim_sgd_vanilla(v, grad[k], optim_config)
+        optim_update(net.params, grad, optim_config)
 
         if decay_lr: optim_config["lr"] = optim_config["base_lr"] * (1 - step / train_steps)
 
