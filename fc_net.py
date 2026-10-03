@@ -204,7 +204,7 @@ if __name__ == "__main__":
 
     num_classes: int = 10
     input_dim: int = 32 * 32 * 3  # actually data dependant
-    net: FC_Net = FC_Net(rng, [32, 16], input_dim, output_dim=num_classes)
+    net: FC_Net = FC_Net(rng, [100, 100, 100, 100, 100], input_dim, output_dim=num_classes)
 
     for k, v in net.params.items():
         print(f"{k=} {v.shape}")
@@ -233,11 +233,11 @@ if __name__ == "__main__":
 
     # test accuracy: 51.50 perc
     overfit_one_batch: bool = False
-    batch_size: int = 50
+    batch_size: int = 100
     train_size: int = data.X_train.shape[0]
     max_index: int = train_size - batch_size
     train_steps: int = 1500 if overfit_one_batch else train_size
-    base_lr: float = 0.1
+    base_lr: float = 5e-3
 
     use_momentum_optim: bool = True
     decay_lr: bool = False
@@ -258,7 +258,7 @@ if __name__ == "__main__":
     }
 
     if use_momentum_optim:
-        optim_config["friction"] = 0.75
+        optim_config["friction"] = 0.9
         for k, v in net.params.items():
             optim_config[f"velocity_{k}"] = np.zeros_like(v)
 
