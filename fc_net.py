@@ -206,12 +206,30 @@ def optim_rmsprop(param_name: str, param: np.ndarray, grad: np.ndarray, config: 
     config[ada_cache_key] = dr * config[ada_cache_key] + ((1 - dr) * grad ** 2)
     param -= config["lr"] * grad / np.sqrt(config[ada_cache_key] + eps)
 
-def optim_adam():
-    pass
+def optim_adam(param_name: str, param: np.ndarray, grad: np.ndarray, config: dict, t: int):
+    eps: float = 1e-8
+    momentum_decay: float = 0.9  # beta1
+    second_moment_decay: float = 0.999  # beta2
+
+    momentum = config.get(f"adam_momentum_{param_name}")
+    second_moment = config.get(f"adam_second_moment_{param_name}")
+
+    momentum = momentum_decay * momentum + (1 - momentum_decay) * grad
+    second_moment = second_moment_decay * second_moment + (1 - second_moment_decay) * (grad ** 2)
+
+    config[f"adam_momentum_{param_name}"] = momentum
+    config[f"adam_second_moment_{param_name}"] = second_moment
+
+    bias_corrected_grad_ema = momentum / (1 - momentum_decay ** t)  # m_hat
+    bias_corrected_sq_grad_ema = second_moment / (1 - second_moment_decay ** t)  # v_hat
+
+    param -= config["lr"] * bias_corrected_grad_ema / (np.sqrt(bias_corrected_sq_grad_ema) + eps)
+
 
 OPTIM_TYPE_SGD_VANILLA: str = "sgd_vanilla"
 OPTIM_TYPE_SGD_MOMENTUM: str = "sgd_momentum"
 OPTIM_TYPE_RMSPROP: str = "rmsprop"
+OPTIM_TYPE_adam: str = "adam"
 def optim_init_config(
         params: dict[str, np.ndarray],
         base_lr: float = 5e-3,
@@ -226,11 +244,14 @@ def optim_init_config(
         for k, v in params.items():
             optim_config[f"velocity_{k}"] = np.zeros_like(v)
 
+    elif optim_type == OPTIM_TYPE_adam:
+        for k, v in params.items():
+            optim_config[f"adam_momentum_{k}"] = np.zeros_like(v)
+            optim_config[f"adam_second_moment_{k}"] = np.zeros_like(v)
     elif optim_type == OPTIM_TYPE_RMSPROP:
         optim_config["ada_decay_rate"] = 0.9
         for k, v in params.items():
             optim_config[f"ada_cache_{k}"] = np.zeros_like(v)
-        pass
     elif optim_type == OPTIM_TYPE_SGD_VANILLA:
         pass
     else:
@@ -240,11 +261,13 @@ def optim_init_config(
 
     return optim_config
 
-def optim_update(params: dict[str, np.ndarray], grad: dict[str, np.ndarray], optim_config: dict):
+def optim_update(params: dict[str, np.ndarray], grad: dict[str, np.ndarray], optim_config: dict, t: int):
     optim_type: str = optim_config.get("optim_type")
     for k, v in params.items():
         if optim_type == OPTIM_TYPE_RMSPROP:
             optim_rmsprop(k, v, grad[k], optim_config)
+        elif optim_type == OPTIM_TYPE_adam:
+            optim_adam(k, v, grad[k], optim_config, t)
         elif optim_type == OPTIM_TYPE_SGD_MOMENTUM:
             optim_sgd_momentum(k, v, grad[k], optim_config)
         elif optim_type == OPTIM_TYPE_SGD_VANILLA:
@@ -296,38 +319,61 @@ if __name__ == "__main__":
     train_size: int = data.X_train.shape[0]
     max_index: int = train_size - batch_size
     train_steps: int = 1500 if overfit_one_batch else train_size
-    base_lr: float = 5e-3
+    base_lr: float = 3e-3
+
+    train_steps = 5000
 
     optim_type: str = OPTIM_TYPE_RMSPROP
     decay_lr: bool = False
 
     reg: float = 0.002
 
-    def run_test():
-        test_logits, loss, _ = net.loss(data.X_test, data.y_test)
+    def run_test(inp_net: FC_Net) -> float:
+        test_logits, loss, _ = inp_net.loss(data.X_test, data.y_test)
         test_probs = softmax(test_logits)
         predicted_labels = np.argmax(test_probs, axis=1)
         test_accuracy = np.mean((predicted_labels == data.y_test))
         print("test accuracy: %.2f perc" % (test_accuracy * 100))
+        return test_accuracy
+
+    '''
+    optim: adam test acc: 49.50 perc
+    optim: sgd_vanilla test acc: 46.00 perc
+    optim: sgd_momentum test acc: 50.90 perc
+    optim: rmsprop test acc: 49.10 perc
+    '''
+    optim_types: list[str] = [
+        OPTIM_TYPE_adam,
+        OPTIM_TYPE_SGD_VANILLA,
+        OPTIM_TYPE_SGD_MOMENTUM,
+        OPTIM_TYPE_RMSPROP
+    ]
+    accuracies: dict[str, float] = {}
+    for opt in optim_types:
+        optim_type: str = opt
+        rng = np.random.default_rng(seed=seed)
+        net: FC_Net = FC_Net(rng, [100, 100, 100, 100, 100], input_dim, output_dim=num_classes)
+        optim_config = optim_init_config(net.params, base_lr, optim_type)
+        print(f"using optimizer: {optim_type}")
+
+        for step in range(train_steps):
+            start = 0 if overfit_one_batch else rng.integers(0, max_index, endpoint=True)  # chance to miss good part of dataset
+            x_batch = data.X_train[start:start + batch_size]
+            y_batch = data.y_train[start:start + batch_size]
+
+            logits, loss, grad = net.loss(x_batch, y_batch)
+
+            lr: float = optim_config.get("lr")
+            if (step <= 10 or step % 1000 == 0):
+                print(f"loss: {loss:.4f} step: {step} lr: {lr:.4f}")
+
+            optim_update(net.params, grad, optim_config, step + 1)
+
+            if decay_lr: optim_config["lr"] = optim_config["base_lr"] * (1 - step / train_steps)
 
 
-    optim_config = optim_init_config(net.params, base_lr, optim_type)
-    print(f"using optimizer: {optim_type}")
+        acc = run_test(net)
+        accuracies[opt] = acc
 
-    for step in range(train_steps):
-        start = 0 if overfit_one_batch else rng.integers(0, max_index, endpoint=True)  # chance to miss good part of dataset
-        x_batch = data.X_train[start:start + batch_size]
-        y_batch = data.y_train[start:start + batch_size]
-
-        logits, loss, grad = net.loss(x_batch, y_batch)
-
-        lr = optim_config.get("lr")
-        if (step <= 10 or step % 1000 == 0):
-            print(f"loss: {loss:.4f} step: {step} lr: {lr:.4f}")
-
-        optim_update(net.params, grad, optim_config)
-
-        if decay_lr: optim_config["lr"] = optim_config["base_lr"] * (1 - step / train_steps)
-
-
-    run_test()
+    for k, v in accuracies.items():
+        print("optim: %s test acc: %.2f perc" % (k, v * 100))
