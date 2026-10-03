@@ -175,11 +175,23 @@ def load_data(extract_features: bool = False) -> Data:
     out.mean_image = mean_image
     return out
 
-
-def optim_sgd_vanilla(param: np.ndarray, grad: np.ndarray, config: dict):
+def assert_optim_config(param: np.ndarray, grad: np.ndarray, config: dict):
     assert param.shape == grad.shape, f"shape mismatch param vs grad {param.shape} != {grad.shape}"
     assert "lr" in config and isinstance(config["lr"], float), f"missing scalar learning rate 'lr' {config}"
+
+def optim_sgd_vanilla(param: np.ndarray, grad: np.ndarray, config: dict):
+    assert_optim_config(param, grad, config)
     param -= config["lr"] * grad
+
+def optim_sgd_momentum(param_name: str, param: np.ndarray, grad: np.ndarray, config: dict):
+    assert_optim_config(param, grad, config)
+    v_key = f"velocity_{param_name}"
+    assert v_key in config, f"missing velocity matrix for {param_name} ({v_key})"
+    assert "friction" in config and isinstance(config["friction"], float), f"missing scalar 'friction' value"
+    # v = m * v - lr * grad
+    new_velocity = config["friction"] * config[v_key] - config["lr"] * grad
+    config[v_key] = new_velocity
+    param += new_velocity  # velocity is already expressed into negative direction of grad
 
 if __name__ == "__main__":
     print(f"python: {sys.version}")
@@ -227,6 +239,9 @@ if __name__ == "__main__":
     train_steps: int = 1500 if overfit_one_batch else train_size
     base_lr: float = 0.1
 
+    use_momentum_optim: bool = True
+    decay_lr: bool = False
+
     reg: float = 0.002
 
     def run_test():
@@ -241,10 +256,16 @@ if __name__ == "__main__":
         "lr": base_lr,
         "base_lr": base_lr,
     }
+
+    if use_momentum_optim:
+        optim_config["friction"] = 0.75
+        for k, v in net.params.items():
+            optim_config[f"velocity_{k}"] = np.zeros_like(v)
+
     for step in range(train_steps):
-        start = 0 if overfit_one_batch else np.random.randint(0, max_index)  # chance to miss good part of dataset
-        x_batch = data.X_train[start:start + batch_size + 1]
-        y_batch = data.y_train[start:start + batch_size + 1]
+        start = 0 if overfit_one_batch else rng.integers(0, max_index, endpoint=True)  # chance to miss good part of dataset
+        x_batch = data.X_train[start:start + batch_size]
+        y_batch = data.y_train[start:start + batch_size]
 
         logits, loss, grad = net.loss(x_batch, y_batch)
 
@@ -253,9 +274,12 @@ if __name__ == "__main__":
             print(f"loss: {loss:.4f} step: {step} lr: {lr:.4f}")
 
         for k, v in net.params.items():
-            optim_sgd_vanilla(v, grad[k], optim_config)
+            if use_momentum_optim:
+                optim_sgd_momentum(k, v, grad[k], optim_config)
+            else:
+                optim_sgd_vanilla(v, grad[k], optim_config)
 
-        optim_config["lr"] = optim_config["base_lr"] * (1 - step / train_steps)
+        if decay_lr: optim_config["lr"] = optim_config["base_lr"] * (1 - step / train_steps)
 
 
     run_test()
