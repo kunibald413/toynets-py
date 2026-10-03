@@ -20,7 +20,6 @@ class FC_Net(object):
         hidden_dims: list[int],
         input_dim: int = 32*32*3,
         output_dim: int = 10,
-        weight_scale: float = 0.1
     ):
         assert hidden_dims is not None and len(hidden_dims) >= 1, "hidden dims must at least have one integer"
         self.num_hidden_layers: int = len(hidden_dims)
@@ -31,13 +30,13 @@ class FC_Net(object):
         for layer_idx in range(self.num_hidden_layers):
             inp_dim: int = input_dim if layer_idx == 0 else hidden_dims[layer_idx - 1]
             out_dim: int = hidden_dims[layer_idx]
-            W_h: np.ndarray = rng.standard_normal((out_dim, inp_dim)) * weight_scale
+            W_h: np.ndarray = rng.standard_normal((out_dim, inp_dim)) * np.sqrt(2.0 / inp_dim)
             b_h: np.ndarray = np.zeros(out_dim)
             self.params[f"W{layer_id}"] = W_h
             self.params[f"b{layer_id}"] = b_h
             layer_id += 1
 
-        W_out: np.ndarray = rng.standard_normal((output_dim, hidden_dims[-1])) * weight_scale
+        W_out: np.ndarray = rng.standard_normal((output_dim, hidden_dims[-1])) * np.sqrt(2.0 / hidden_dims[-1])
         b_out: np.ndarray = np.zeros(output_dim)
         self.params[f"W{layer_id}"] = W_out
         self.params[f"b{layer_id}"] = b_out
