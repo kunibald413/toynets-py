@@ -298,7 +298,6 @@ if __name__ == "__main__":
     train_steps: int = 1500 if overfit_one_batch else train_size
     base_lr: float = 5e-3
 
-    train_steps = 5000
     optim_type: str = OPTIM_TYPE_RMSPROP
     decay_lr: bool = False
 
