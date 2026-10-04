@@ -19,10 +19,8 @@ class NGram(nn.Module):
 
         loss = None
         if y is not None:
-            probs = F.softmax(logits, 1)
-            labels = probs[-1, y]
-            loss = -torch.log(labels)
-            loss = loss.mean()
+            # logits: (B, T, vocab_size) -> (B*T, vocab_size); y: (B, T) -> (B*T,).
+            loss = F.cross_entropy(logits.view(-1, logits.size(-1)), y.view(-1))
 
         return logits, loss
 
@@ -47,7 +45,7 @@ if __name__ == "__main__":
     with open('datasets/willy.txt', 'r', encoding='utf-8') as f:
         text = f.read()
     chars = sorted(list(set(text)))
-    vocab_size: int = len(chars)
+    vocab_size: int = len(chars)  # or "classification bins"
     print(''.join(chars))
     print(vocab_size)
 
@@ -83,34 +81,33 @@ if __name__ == "__main__":
     torch.backends.cudnn.benchmark = False
 
     sequence_len: int = 8
-    hdim: int = 16
+    hdim: int = 16  # hidden dimension
+    lr: float = 0.2
+    reg: float = 0.01
 
     ngram: NGram = NGram(vocab_size, hdim)
 
-    ngram.to(device)
-    train_data.to(device)
+    ngram = ngram.to(device)
+    train_data = train_data.to(device)
     ngram.train()
 
-    lr: float = 0.2
     max_steps = (data.shape[0] - sequence_len) // sequence_len
     print(f"max steps: {max_steps}")
-    max_steps = 3000
+
     for i in range(max_steps):
-        x = train_data[i:i + sequence_len]
-        y = train_data[i + 1:i + sequence_len + 1]
+        x = train_data[i:i + sequence_len]  # (T, )
+        y = train_data[i + 1:i + sequence_len + 1]  # (T, )
 
-        accum_loss = 0.0
-        for t in range(sequence_len):
-            context = x[:t + 1]
-            target = y[t]
-            logits, loss = ngram.forward(context, target)
-            accum_loss += loss
+        x = x.unsqueeze(0)  # (B, T)
+        y = y.unsqueeze(0)  # (B, T)
 
-        accum_loss /= sequence_len
+        logits, loss = ngram.forward(x, y)
+
+        loss = loss + reg * (ngram.W1 ** 2).mean() + reg * (ngram.W2 ** 2).mean()
 
         if (i < 5 or i % 1000 == 0):
-            print(f"loss: %.4f step %d " % (accum_loss.data.item(), i)) #  causes sync from gpu to cpu
-        accum_loss.backward()
+            print(f"loss: %.4f step %d " % (loss.data.item(), i)) #  causes sync from gpu to cpu
+        loss.backward()
 
         for p in ngram.parameters():
             if p.grad is not None:
@@ -122,24 +119,24 @@ if __name__ == "__main__":
     ngram.eval()
     val_loss = 0.0
     count = 0
+    val_data = val_data.to(device)
     with torch.no_grad():
         for i in range(0, len(val_data) - sequence_len - 1, sequence_len):
             x = val_data[i:i + sequence_len]
             y = val_data[i + 1:i + sequence_len + 1]
 
-            accum = 0.0
-            for t in range(sequence_len):
-                context = x[:t + 1]
-                target = y[t]
-                _, loss = ngram.forward(context, target)
-                accum += loss
+            x = x.unsqueeze(0)  # (B, T)
+            y = y.unsqueeze(0)  # (B, T)
 
-            val_loss += (accum / sequence_len).item()
+            _, loss = ngram.forward(x, y)
+
+            val_loss += loss.item()
             count += 1
 
     val_loss /= count
     print(f"val loss: {val_loss:.4f}")
 
     print("generating sample: ")
-    inp_x = torch.tensor(encode("Dear"), dtype=torch.long).to(device)
+    inp_x = torch.tensor(encode("Oh Lord, the toilet paper is out"), dtype=torch.long).to(device)
     print(decode(generate(ngram, inp_x, 256)[0].tolist()))
+    print(decode(generate(ngram, inp_x, 512)[0].tolist()))
